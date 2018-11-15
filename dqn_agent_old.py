@@ -37,31 +37,36 @@ class DqnAgent:
         self.model.compile(loss="mean_squared_error",
                            optimizer=Adam(lr=self.learning_rate))
 
-    def remember(self, state, action, reward, next_state, done):
-        self.experienceBuffer.append((state, action, reward, next_state, done))
-
     def act(self, state):
         if np.random.rand() <= self.epsilon and self.training:
             return self.env.action_space.sample()
-        act_values = self.model.predict(state)
+        act_values = self.model.predict(np.array([state]))
         return np.argmax(act_values[0])  # returns action
 
-    def replay(self, batch_size):
+    def remember(self, state, action, reward, new_state, done):
+        tmp = {
+            "state": state,
+            "action": action,
+            "reward": reward,
+            "new_state": new_state,
+            "done": done
+        }
+        self.experienceBuffer.append(tmp)
+
+    def replay(self,batch_size):
         states = []
         targets = []
         if len(self.experienceBuffer) <= batch_size:
             batch_size = len(self.experienceBuffer)
         minibatch = random.sample(self.experienceBuffer, batch_size)
-        for state, action, reward, next_state, done in minibatch:
-            target = reward
-            if not done:
-                target = reward + self.gamma * np.amax(self.model.predict(next_state)[0])
-            target_f = self.model.predict(state)
-            target_f[0][action] = target
-            states.append(state[0])
+        for sample in minibatch:
+            target = sample.get("reward")
+            if not sample.get("done"):
+                target = sample.get("reward") + self.gamma * np.amax(self.model.predict(np.array([sample.get("new_state")]))[0])
+            target_f = self.model.predict(np.array([sample.get("state")]))
+            target_f[0][sample.get("action")] = target
+            states.append(sample.get("state"))
             targets.append(target_f[0])
-
-        #Train in batch to make sure the noise is minimal
         self.model.fit(np.asarray(states), np.asarray(targets), epochs=1, verbose=0)
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
@@ -91,23 +96,21 @@ def run_agent(env, training=False, number_of_episodes=100, model_name=None):
         done = False
         total_episode_reward = 0
         state = env.reset()
-        state = np.reshape(state, [1, 4])
 
         while not done:
             action = agent.act(state)
-            next_state, reward, done, _ = env.step(action)
+            new_state, reward, done, _ = env.step(action)
 
-            next_state = np.reshape(next_state, [1, 4])
             agent.remember(state=state,
                            action=action,
                            reward=reward,
-                           next_state=next_state,
+                           new_state=new_state,
                            done=done)
 
             if not training:
                 env.render()
                 sleep(0.02)
-            state = next_state
+            state = new_state
             total_episode_reward += reward
 
             if training:
@@ -127,13 +130,13 @@ def main():
     env = gym.make("CartPole-v1")
 
     # Train the agent
-    run_agent(env, training=True, number_of_episodes=100)
+    #run_agent(env, training=True, number_of_episodes=100)
 
     # Test performance of the agent
-    run_agent(env, training=False, number_of_episodes=10)
+    #run_agent(env, training=False, number_of_episodes=10)
 
      # Demo
-    #run_agent(env, training=False, number_of_episodes=100, model_name="wiebel.model")
+    run_agent(env, training=False, number_of_episodes=100, model_name="wiebel.model")
 
 
 if __name__ == "__main__":
